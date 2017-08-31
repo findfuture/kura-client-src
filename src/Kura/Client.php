@@ -573,7 +573,7 @@
         private static function _load($class)
         {
             $path = str_replace('\\', DIRECTORY_SEPARATOR, $class);
-            $file = __DIR__.'\\'.$path.'.php';
+            $file = __DIR__.'/'.$path.'.php';
             if (file_exists($file)) require_once $file;
         }
         
