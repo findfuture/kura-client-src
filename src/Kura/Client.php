@@ -4,12 +4,12 @@
     * -----------------------------------------------
     * 云掌财经SOA微服务框架SERVICE客户端SDK
     * -----------------------------------------------
-    * 版本：1.0.4
+    * 版本：1.0.5
     * 开发人员：苏睿 / surui@123.com.cn
-    * 最后更新日期：2017/06/21
+    * 最后更新日期：2017/09/04
     * -----------------------------------------------
     * SVN:
-    * GIT:
+    * GIT:https://github.com/suruibuas/kura-client
     * -----------------------------------------------
     */
 
@@ -42,6 +42,18 @@
         private $_tasks = [];
         //延迟队列
         private $_deferred = [];
+        //是否读取缓存
+        private $_cache = FALSE;
+        //缓存数据
+        private $_cacheData = [];
+        //缓存时长
+        private $_cacheTime;
+        //缓存名称
+        private $_cacheName = '';
+        //缓存类型
+        private $_cacheType;
+        //redis对象
+        private $_redis = null;
         
         public function __construct()
         {
@@ -52,52 +64,52 @@
             //校验配置信息
             if ( ! isset($this->_config['PRONAME']) || $this->_config['PRONAME'] == '')
             {
-                $this->_error(array(
+                $this->_error([
                     'code' => 500,
                     'msg'  => '项目名称未配置，请检查'
-                ));
+                ]);
             }
             if ( ! isset($this->_config['PROURL']) || $this->_config['PROURL'] == '')
             {
-                $this->_error(array(
+                $this->_error([
                     'code' => 500,
                     'msg'  => '项目URL地址未配置，请检查'
-                ));
+                ]);
             }
             if ( ! isset($this->_config['ONLINE']))
             {
-                $this->_error(array(
+                $this->_error([
                     'code' => 500,
                     'msg'  => '开发环境未配置，请检查'
-                ));
+                ]);
             }
             if ( ! isset($this->_config['EXAMPLE']) || $this->_config['EXAMPLE'] < 1)
             {
-                $this->_error(array(
+                $this->_error([
                     'code' => 500,
                     'msg'  => '默认实例配置不正确，请检查'
-                ));
+                ]);
             }
             if ( ! isset($this->_config['CLIENT']))
             {
-                $this->_error(array(
+                $this->_error([
                     'code' => 500,
                     'msg'  => '项目平台未配置，请检查'
-                ));
+                ]);
             }
             if ( ! isset($this->_config['UNAME']) || $this->_config['UNAME'] == '')
             {
-                $this->_error(array(
+                $this->_error([
                     'code' => 500,
                     'msg'  => '开发者账号未配置，请检查'
-                ));
+                ]);
             }
             if ( ! isset($this->_config['PWORD']) || $this->_config['PWORD'] == '')
             {
-                $this->_error(array(
+                $this->_error([
                     'code' => 500,
                     'msg'  => '开发者密码未配置，请检查'
-                ));
+                ]);
             }
             $this->_soa = $this->_config['SOA'];
             //全局密钥
@@ -110,16 +122,16 @@
             $this->_config    = array_merge($this->_config, $hash);
             $auth             = require 'init/'.md5('auth').'.php';
             $this->_config    = array_merge($this->_config, $auth);
-            $this->_header    = array();
+            $this->_header    = [];
             $this->_customEid = 0;
-            $this->_custom    = array();
+            $this->_custom    = [];
             $this->_multiCurl = curl_multi_init();
             if ( ! $this->_multiCurl)
             {
-                $this->_error(array(
+                $this->_error([
                     'code' => 101,
                     'msg'  => 'CURL初始化失败'
-                ));
+                ]);
             }
             spl_autoload_register('Kura\Client::_load');
             $end = microtime(TRUE);
@@ -128,10 +140,18 @@
         }
         
         //调用服务,GET方式
-        public function get($url, $get = array(), $eid = 0)
+        public function get($url, $get = [], $eid = 0)
         {
+            if ($this->_cache && ! empty($this->_cacheData))
+            {
+                $this->_cache = FALSE;
+                $this->_cacheTime = $this->_config['CACHETIMEOUT'];
+                $return = $this->_cacheData;
+                $this->_cacheData = [];
+                return $return;
+            }
             $start = microtime(TRUE);
-            $param = array();
+            $param = [];
             //拼接GET请求参数
             if (is_array($get) && ! empty($get))
             {
@@ -149,17 +169,26 @@
                 $this->_customEid = 0;
             }
             $data = $this->_http($param);
-            $return = array();
+            $return = [];
             $return['code'] = $data['result']['code'];
             $return['msg']  = $data['result']['msg'];
             if (isset($data['data']))
             $return['data'] = $data['data'];
+            if ($this->_cache)
+            {
+                ($this->_cacheType == 'file') ? $this->_fileCache($this->_cacheName, $return, $this->_cacheTime) : 
+                    $this->_redisCache($this->_cacheName, json_encode($return), $this->_cacheTime);
+            }
             $end = microtime(TRUE);
             if (isset($this->_debug['_time']))
             {
                 $this->_debug[$this->_debugKey]['_time'] = $this->_debug['_time'] + round($end - $start, 5);
                 $this->_debug['_allTime'] +=  $this->_debug[$this->_debugKey]['_time'];
             }
+            $this->_cache = FALSE;
+            $this->_cacheName = '';
+            $this->_cacheTime = $this->_config['CACHETIMEOUT'];
+            $this->_cacheType = $this->_config['CACHE'];
             return $return;
         }
         
@@ -167,7 +196,7 @@
         public function post($url, $data, $eid = 0)
         {
             $start = microtime(TRUE);
-            $param = array();
+            $param = [];
             $param['url']  = $url;
             $param['data'] = $data;
             if ($eid > 0 && $eid != $this->_config['EXAMPLE'])
@@ -179,7 +208,7 @@
                 $this->_customEid = 0;
             }
             $data = $this->_http($param);
-            $return = array();
+            $return = [];
             $return['code'] = $data['result']['code'];
             $return['msg']  = $data['result']['msg'];
             if (isset($data['data']))
@@ -200,7 +229,7 @@
             {
                 unset($this->_debug['_time']);
                 unset($this->_debug['_allTime']);
-                $tmp = array();
+                $tmp = [];
                 foreach ($this->_debug as $row)
                 {
                     $tmp[] = json_decode($row['_return'], TRUE);
@@ -276,7 +305,7 @@
         }
         
         //设置HEADER头信息
-        public function header($header = array())
+        public function header($header = [])
         {
             if (empty($header))
             {
@@ -291,6 +320,7 @@
         //添加任务
         public function add($param, $key = null, $eid = 0)
         {
+            if ($this->_cache && ! empty($this->_cacheData)) return $this;
             $s = microtime(TRUE);
             if (is_null($key))
             {
@@ -316,6 +346,14 @@
         //批量执行任务
         public function run($debug = FALSE)
         {
+            if ($this->_cache && ! empty($this->_cacheData))
+            {
+                $this->_cache = FALSE;
+                $this->_cacheTime = $this->_config['CACHETIMEOUT'];
+                $return = $this->_cacheData;
+                $this->_cacheData = [];
+                return $return;
+            }
             $s = microtime(TRUE);
             //输出
             $result = [];
@@ -350,22 +388,22 @@
                     //如果有错误则通知延迟队列一个失败信息并跳过
                     if ($errno != 0)
                     {
-                        $deferred->reject(array(
+                        $deferred->reject([
                             'info'  => $info,
                             'error' => $error,
                             'errno' => $errno,
                             'cont'  => $cont
-                        ));
+                        ]);
                         $this->_debug[$taskName]['_return'] = '请求失败';
                         continue;
                     }
                     //成功通知
-                    $deferred->resolve(array(
+                    $deferred->resolve([
                         'info'  => $info,
                         'error' => $error,
                         'errno' => $errno,
                         'cont'  => $cont
-                    ));
+                    ]);
                     $this->_debug[$taskName]['_return'] = $cont;
                     $cont = json_decode($cont, TRUE);
                     if ($debug)
@@ -387,9 +425,65 @@
                 }
             } while($active);
             curl_multi_close($this->_multiCurl);
+            if ($this->_cache)
+            {
+                ($this->_cacheType == 'file') ? $this->_fileCache($this->_cacheName, $result, $this->_cacheTime) : 
+                    $this->_redisCache($this->_cacheName, json_encode($result), $this->_cacheTime);
+            }
+            $this->_cache = FALSE;
+            $this->_cacheName = '';
+            $this->_cacheTime = $this->_config['CACHETIMEOUT'];
+            $this->_cacheType = $this->_config['CACHE'];
             $e = microtime(TRUE);
             $this->_debug['_allTime'] = $this->_debug['_time'] + round($e - $s, 5);
             return $result;
+        }
+        
+        //读取缓存
+        public function cache($name = '', $time = 0, $type = null)
+        {
+            if ($name == '')
+            {
+                $this->_error([
+                    'code' => 201,
+                    'msg'  => '请输入cache的名称'
+                ]);
+            }
+            $this->_cache = TRUE;
+            $type = (is_string($time)) ? $time : $type;
+            $this->_cacheType = (is_null($type)) ? $this->_config['CACHE'] : $type;
+            if ($this->_cacheType == 'file')
+            {
+                //读取文件缓存
+                $cache = $this->_fileCache($name);
+            }
+            else
+            {
+                //读取redis缓存
+                $cache = $this->_redisCache($name);
+            }
+            if ($cache != FALSE)
+            {
+                $this->_cacheData = $cache;
+            }
+            else
+            {
+                $this->_cacheName = $name;
+                $time = (is_string($time)) ? 0 : $time;
+                if ($time == -1)
+                {
+                    $this->_cacheTime = 0;
+                }
+                else if ($time == 0)
+                {
+                    $this->_cacheTime = $this->_config['CACHETIMEOUT'];
+                }
+                else
+                {
+                    $this->_cacheTime = $time;
+                }
+            }
+            return $this;
         }
         
         //输出错误信息
@@ -413,7 +507,7 @@
             }
             $nonce    = rand(100000, 999999);
             $curtime  = date('YmdHis', time());
-            $header   = array();
+            $header   = [];
             $header[] = 'CLIENT:'.$this->_config['CLIENT'];
             $header[] = 'APPID:'.$appid;
             $header[] = 'NONCE:'.$nonce;
@@ -443,15 +537,15 @@
             $url .= '&proname='.$this->_config['PRONAME'];
             $url .= '&prourl='.urlencode($this->_config['PROURL']);
             $url .= '&client='.$this->_config['CLIENT'];
-            $data = $this->_http(array(
+            $data = $this->_http([
                 'url' => $url
-            ), TRUE);
+            ], TRUE);
             if (is_null($data))
             {
-                $this->_error(array(
+                $this->_error([
                     'code' => 404,
                     'msg'  => 'SOA连接失败，请联系管理人员'
-                ));
+                ]);
             }
             if ($data['code'] != 100)
             {
@@ -460,22 +554,29 @@
             $data   = $data['msg'];
             $appid  = json_decode($data['appid'], TRUE);
             $secret = json_decode($data['secret'], TRUE);
-            $init   = array();
+            $init   = [];
             $init['APPID']  = $appid;
             $init['SECRET'] = $secret;
             $init['URL']    = $data['url'];
             $val = '<?PHP return '.var_export($init, TRUE).';';
+            if ( ! is_writable(dirname(__FILE__).'/init/'))
+            {
+                $this->_error(array(
+                    'code' => 303,
+                    'msg'  => '目录：'.dirname(__FILE__).'/init/ 需要写权限'
+                ));
+            }
             file_put_contents($this->_hash, $val);
             $auth = dirname(__FILE__).'/init/'.md5('auth').'.php';
             if ( ! is_file($auth))
             {
-                $val = '<?PHP return '.var_export(array('TOKEN' => $data['token']), TRUE).';';
+                $val = '<?PHP return '.var_export(['TOKEN' => $data['token']], TRUE).';';
                 file_put_contents($auth, $val);
             }
         }
         
         //组合GET请求的URL参数
-        private function _createGetParam($param = array())
+        private function _createGetParam($param = [])
         {
             $url = '?';
             $doc = '';
@@ -488,7 +589,7 @@
         }
         
         //发送HTTP请求
-        private function _http($param = array(), $soa = FALSE, $attach = FALSE, $eid = 0, $debugKey = null)
+        private function _http($param = [], $soa = FALSE, $attach = FALSE, $eid = 0, $debugKey = null)
         {
             if ( ! isset($param['url']))
             {
@@ -516,7 +617,7 @@
             $url .= $param['url'];
             $this->_debugKey = is_null($debugKey) ? md5($url) : $debugKey;
             //发送的数据
-            $data   = ( ! isset($param['data'])) ? array() : $param['data'];
+            $data   = ( ! isset($param['data'])) ? [] : $param['data'];
             //请求模式
             $method = ( ! empty($data)) ? 'POST' : 'GET';
             if ( ! $soa)
@@ -534,13 +635,13 @@
             }
             else
             {
-                $header = array();
+                $header = [];
             }
             //超时时间
             $time = ( ! isset($param['time'])) ? 3 : $param['time'];
             //返回类型：html/json
             $type = ( ! isset($param['type'])) ? 'json' : $param['type'];
-            $opts = array(
+            $opts = [
                 CURLOPT_TIMEOUT        => $time,
                 CURLOPT_RETURNTRANSFER => 1,
                 CURLOPT_SSL_VERIFYPEER => FALSE,
@@ -550,7 +651,7 @@
                 CURLOPT_CUSTOMREQUEST  => $method,
                 CURLOPT_POST           => TRUE, 
                 CURLOPT_POSTFIELDS     => http_build_query($data)
-            );
+            ];
             $curl = curl_init();
             curl_setopt_array($curl, $opts);
             //返回句柄给异步
@@ -577,4 +678,105 @@
             if (file_exists($file)) require_once $file;
         }
         
+        //文件缓存
+        private function _fileCache($name, $val = null, $time = 0)
+        {
+            //缓存目录
+            if ($name == '')
+            {
+                return FALSE;
+            }
+            $doc = '';
+            //HASH缓存目录
+            $pathArr = array_slice(str_split($hash = md5($name), 2), 0, 2);
+            $cache = dirname(__FILE__).'/cache/';
+            foreach ($pathArr as $p)
+            {
+                $cache .= $doc.$p;
+                if ( ! is_dir($cache)) mkdir($cache, 0777);
+                $doc = '/';
+            }
+            $cache .= '/'.$hash.'.php';
+            //读取缓存
+            if (is_null($val))
+            {
+                if ( ! is_file($cache))
+                {
+                    return FALSE;
+                }
+                $data = include($cache);
+                $cacheTime = $data[1];
+                if ($cacheTime == 0)
+                {
+                    return $data[0];
+                }
+                if (time() >= $cacheTime)
+                {
+                    return FALSE;
+                }
+                return $data[0];
+            }
+            //设置缓存
+            else
+            {
+                if ($val == '' OR empty($val))
+                {
+                    return FALSE;
+                }
+                if ( ! is_writable(dirname(__FILE__).'/cache/'))
+                {
+                    $this->_error(array(
+                        'code' => 303,
+                        'msg'  => '目录：'.dirname(__FILE__).'/cache/ 需要写权限'
+                    ));
+                }
+                $time = ($time == 0) ? 0 : time() + $time;
+                $val = '<?PHP return '.var_export([$val, $time], TRUE).';';
+                file_put_contents($cache, $val);
+                return TRUE;
+            }
+        }
+        
+        //redis缓存
+        private function _redisCache($name, $data = null, $time = 0)
+        {
+            if (is_null($this->_redis))
+            {
+                $this->_redis = new \Redis();
+                if ( ! $this->_redis->connect($this->_config['HOST'], $this->_config['PORT'], 3))
+                {
+                    $this->_error([
+                        'code' => 301,
+                        'msg'  => 'redis：'.$this->_config['HOST'].'连接失败！'
+                    ]);
+                }
+                if ($this->_config['PASS'] != '')
+                {
+                    if ( ! $this->_redis->auth($this->_config['PASS']))
+                    $this->_error([
+                        'code' => 302,
+                        'msg'  => 'redis登录失败，请检查密码是否有误！'
+                    ]);
+                }
+            }
+            $key = $this->_config['PREFIX'].$name;
+            if (is_null($data))
+            {
+                $data = $this->_redis->get($key);
+                return ( ! $data) ? FALSE : json_decode($data, TRUE);
+            }
+            else
+            {
+                $data = (is_object($data) || is_array($data)) ? json_encode($data) : $data;
+                if($time > 0)
+                {
+                    $this->_redis->setex($key, $time, $data);
+                }
+                else
+                {
+                    $this->_redis->set($key, $data);
+                }
+            }
+        }
+
     }

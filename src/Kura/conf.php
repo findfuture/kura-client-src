@@ -24,5 +24,17 @@
     $conf['UNAME']   = 'xxx';
     //开发者密码
     $conf['PWORD']   = 'xxx';
+	//缓存配置，支持file、redis
+    $conf['CACHE']   = 'file';
+    //REDIS地址
+    $conf['HOST']    = 'xxx.xxx.xxx.xxx';
+    //REDIS端口
+    $conf['PORT']    = '6379';
+    //REDIS密码
+    $conf['PASS']    = '';
+    //REDIS前缀
+    $conf['PREFIX']  = '';
+    //默认缓存时长,单位秒
+    $conf['CACHETIMEOUT'] = 600;
     
     return $conf;
