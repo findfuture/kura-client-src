@@ -214,7 +214,7 @@
             $return['code'] = $data['result']['code'];
             $return['msg']  = $data['result']['msg'];
             if (isset($data['data']))
-            $return['data'] = $data['data']['list'];
+            $return['data'] = $data['data'];
             $end = microtime(TRUE);
             if (isset($this->_debug['_time']))
             {
