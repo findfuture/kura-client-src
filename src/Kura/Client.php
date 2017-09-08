@@ -54,6 +54,8 @@
         private $_cacheType;
         //redis对象
         private $_redis = null;
+        //超时时间
+        private $_timeout = 3;
         
         public function __construct()
         {
@@ -317,6 +319,13 @@
             }
         }
         
+        //设置超时时间
+        public function setTimeout($time = 3)
+        {
+            $this->_timeout = $time;
+            return $this;
+        }
+        
         //添加任务
         public function add($param, $key = null, $eid = 0)
         {
@@ -394,7 +403,7 @@
                             'errno' => $errno,
                             'cont'  => $cont
                         ]);
-                        $this->_debug[$taskName]['_return'] = '请求失败';
+                        $this->_debug[$taskName]['_return'] = '请求失败：'.$errno;
                         continue;
                     }
                     //成功通知
@@ -638,7 +647,7 @@
                 $header = [];
             }
             //超时时间
-            $time = ( ! isset($param['time'])) ? 3 : $param['time'];
+            $time = ( ! isset($param['time'])) ? $this->_timeout : $param['time'];
             //返回类型：html/json
             $type = ( ! isset($param['type'])) ? 'json' : $param['type'];
             $opts = [
